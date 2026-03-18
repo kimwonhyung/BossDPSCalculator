@@ -66,7 +66,7 @@ BOSSES = [
 
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 # 업데이트 시 latest.json과 함께 버전, URL, SHA256 해시 갱신 필요  
-APP_VERSION = "1.5"
+APP_VERSION = "1.4"
 # GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
@@ -1889,13 +1889,17 @@ class App(ctk.CTk):
         def _ps_quote(text: str) -> str:
             return str(text).replace("'", "''")
 
+        def _ps_literal(text: str) -> str:
+            # PowerShell에서 -LiteralPath에 사용할 경로를 항상 '로 감싸기
+            return f"'{_ps_quote(text)}'"
+
         pid_val = os.getpid()
-        return (
+        ps_script = (
             "$ErrorActionPreference = 'Stop'\n"
             f"$pidToWait = {pid_val}\n"
-            f"$appExe = '{_ps_quote(str(app_exe))}'\n"
-            f"$newExe = '{_ps_quote(str(downloaded_exe))}'\n"
-            f"$backupExe = '{_ps_quote(str(backup_exe))}'\n"
+            f"$appExe = {_ps_literal(str(app_exe))}\n"
+            f"$newExe = {_ps_literal(str(downloaded_exe))}\n"
+            f"$backupExe = {_ps_literal(str(backup_exe))}\n"
             "Write-Host '=== 업데이트 스크립트 시작 ==='\n"
             "Write-Host 'appExe:' $appExe\n"
             "Write-Host 'newExe:' $newExe\n"
@@ -1920,7 +1924,7 @@ class App(ctk.CTk):
             "}\n"
             "Write-Host '=== 업데이트 스크립트 종료 ==='\n"
         )
-
+        return ps_script
     def _on_update_download_done(self, outcome):
         self._update_downloading = False
         if not isinstance(outcome, dict):
