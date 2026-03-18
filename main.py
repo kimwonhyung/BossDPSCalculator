@@ -66,7 +66,7 @@ BOSSES = [
 
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 # 업데이트 시 latest.json과 함께 버전, URL, SHA256 해시 갱신 필요  
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 # GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
@@ -1863,7 +1863,7 @@ class App(ctk.CTk):
 
                 script_path = tmp_dir / "apply_update.ps1"
                 script_path.write_text(
-                    self._build_update_apply_script(downloaded_exe),
+                    self._build_update_apply_script(downloaded_exe, str(manifest.get("version") or "")),
                     encoding="utf-8-sig",
                 )
 
@@ -1882,7 +1882,7 @@ class App(ctk.CTk):
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _build_update_apply_script(self, downloaded_exe: Path) -> str:
+    def _build_update_apply_script(self, downloaded_exe: Path, new_version: str) -> str:
         app_exe = Path(sys.executable).resolve()
 
         def _ps_quote(text: str) -> str:
@@ -1897,14 +1897,37 @@ class App(ctk.CTk):
             "$ErrorActionPreference = 'Stop'\n"
             f"$pidToWait = {pid_val}\n"
             f"$newExe = {_ps_literal(str(downloaded_exe))}\n"
+            f"$oldExe = {_ps_literal(str(app_exe))}\n"
+            f"$newVersion = '{_ps_quote(new_version)}'\n"
             "Write-Host '=== 업데이트 스크립트 시작 ==='\n"
             "Write-Host 'newExe:' $newExe\n"
+            "Write-Host 'oldExe:' $oldExe\n"
+            "Write-Host 'newVersion:' $newVersion\n"
             "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }\n"
             "Start-Sleep -Milliseconds 800\n"
             "try {\n"
-            "  Write-Host '업데이트된 파일 실행'\n"
-            "  Start-Process -FilePath $newExe\n"
-            "  Write-Host 'Start-Process 완료'\n"
+            "  Write-Host '백업 경로 계산'\n"
+            "  $parent = Split-Path -Parent $oldExe\n"
+            "  $base = Split-Path -Leaf $oldExe\n"
+            "  $baseName = [IO.Path]::GetFileNameWithoutExtension($base)\n"
+            "  $ext = [IO.Path]::GetExtension($base)\n"
+            "  try { $oldVersion = (Get-Item $oldExe).VersionInfo.FileVersion } catch { $oldVersion = '' }\n"
+            "  if (-not $oldVersion) { $oldVersion = (Get-Date).ToString('yyyyMMddHHmmss') }\n"
+            "  $backupName = ($baseName + '_v' + $oldVersion + $ext)\n"
+            "  $backupPath = Join-Path $parent $backupName\n"
+            "  if (Test-Path $backupPath) { Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue }\n"
+            "  Write-Host '백업 생성:' $backupPath\n"
+            "  Move-Item -LiteralPath $oldExe -Destination $backupPath -Force\n"
+            "  Write-Host '백업 완료'\n"
+            "  Write-Host '새 파일 복사'\n"
+            "  Copy-Item -LiteralPath $newExe -Destination $oldExe -Force\n"
+            "  Write-Host '교체 완료'\n"
+            "  Write-Host '신버전 실행'\n"
+            "  Start-Process -FilePath $oldExe\n"
+            "  Write-Host '신버전 실행 완료'\n"
+            "  # 오래된 백업 정리 (30일 이상)\n"
+            "  $cutoff = (Get-Date).AddDays(-30)\n"
+            "  Get-ChildItem -Path $parent -Filter ($baseName + '_v*' + $ext) | Where-Object { $_.LastWriteTime -lt $cutoff } | Remove-Item -Force -ErrorAction SilentlyContinue\n"
             "}\n"
             "catch {\n"
             "  Write-Host '업데이트 스크립트 오류:' $_\n"
