@@ -4,3 +4,4 @@ dist/
 *.pyc
 *.spec
 venv/
+*.mp4
