@@ -1,6 +1,6 @@
 {
   "version": "1.4",
-  "url": "https://example.com/releases/BossDPSCalculator_v2_1.4.exe",
+  "url": "https://github.com/kimwonhyung/BossDPSCalculator/releases/download/v1.4/BossDPSCalculator_v2_1.4.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "notes": "정보창 개선, 매크로 프리셋 3개/8줄 지원"
+  "notes": "자동 업데이트 기능 추가"
 }
