@@ -35,8 +35,8 @@ WEAPON_BASE = {
     "배틀(후원)": lambda lvl: (13500 + 520 * 115) * 12,
     "다칸":       lambda lvl: (65000 + 550 * 100) * 14,
     "다칸(후원)": lambda lvl: (65000 + 550 * 115) * 14,
-    "롱기": lambda lvl: (80000 + 800 * 100) * 20,
-    "롱기(후원)": lambda lvl: (80000 + 800 * 115) * 20,
+    "신화": lambda lvl: (80000 + 800 * 100) * 20,
+    "신화(후원)": lambda lvl: (80000 + 800 * 115) * 20,
 }
 WEAPONS = list(WEAPON_BASE.keys())
 
@@ -49,7 +49,7 @@ SUB_BASE = {
     "태초": 69600 * 12,
     "신화": 139000 * 12,
 }
-SUB_STACKS = ["X", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+SUB_STACKS = ["X"] + [str(i) for i in range(0, 20)]
 
 BOSSES = [
     ("이지 아르카인", 7.5), ("노말 아르카인", 15.5),
@@ -66,7 +66,7 @@ BOSSES = [
 
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 # 업데이트 시 latest.json과 함께 버전, URL, SHA256 해시 갱신 필요  
-APP_VERSION = "1.5"
+APP_VERSION = "1.4"
 # GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
@@ -171,8 +171,8 @@ def calc_dps(weapon, seal_re_cnt, seal_shin_cnt, seal_lvl, subs):
     w_base = WEAPON_BASE.get(weapon, lambda x: 0)(seal_lvl)
     # [레]인: 기존 인장 공식
     seal_re_damage = seal_re_cnt * (9900 + 495 * seal_lvl) * 2.67
-    # [신]인: 기본 공격력 20000, 1업당 550, 공속 8
-    seal_shin_damage = seal_shin_cnt * (20000 + 550 * seal_lvl) * 8
+    # [신]인: 기본 공격력 12500, 1업당 520, 공속 8
+    seal_shin_damage = seal_shin_cnt * (12500 + 520 * seal_lvl) * 8
     sub_total = 0
     for item in (subs if isinstance(subs, list) else []):
         if not isinstance(item, (list, tuple)) or len(item) < 2:
@@ -181,7 +181,7 @@ def calc_dps(weapon, seal_re_cnt, seal_shin_cnt, seal_lvl, subs):
         if grade == "없음" or stack in ("없음", "X"):
             continue
         base = SUB_BASE.get(grade, 0)
-        stack_i = _to_int(stack, default=0, min_value=0, max_value=9)
+        stack_i = _to_int(stack, default=0, min_value=0, max_value=19)
         sub_total += base * (1 + stack_i * 0.5)
     return (w_base + seal_re_damage + seal_shin_damage + sub_total) * 180
 
@@ -1864,7 +1864,7 @@ class App(ctk.CTk):
                 script_path = tmp_dir / "apply_update.ps1"
                 script_path.write_text(
                     self._build_update_apply_script(downloaded_exe),
-                    encoding="utf-8",
+                    encoding="utf-8-sig",
                 )
 
                 outcome = {
@@ -1884,7 +1884,6 @@ class App(ctk.CTk):
 
     def _build_update_apply_script(self, downloaded_exe: Path) -> str:
         app_exe = Path(sys.executable).resolve()
-        backup_exe = Path(str(app_exe) + ".bak")
 
         def _ps_quote(text: str) -> str:
             return str(text).replace("'", "''")
@@ -1897,30 +1896,19 @@ class App(ctk.CTk):
         ps_script = (
             "$ErrorActionPreference = 'Stop'\n"
             f"$pidToWait = {pid_val}\n"
-            f"$appExe = {_ps_literal(str(app_exe))}\n"
             f"$newExe = {_ps_literal(str(downloaded_exe))}\n"
-            f"$backupExe = {_ps_literal(str(backup_exe))}\n"
             "Write-Host '=== 업데이트 스크립트 시작 ==='\n"
-            "Write-Host 'appExe:' $appExe\n"
             "Write-Host 'newExe:' $newExe\n"
-            "Write-Host 'backupExe:' $backupExe\n"
             "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }\n"
-            "Start-Sleep -Milliseconds 300\n"
+            "Start-Sleep -Milliseconds 800\n"
             "try {\n"
-            "  Write-Host '백업/교체 시작'\n"
-            "  if (Test-Path -LiteralPath $backupExe) { Remove-Item -LiteralPath $backupExe -Force -ErrorAction SilentlyContinue }\n"
-            "  if (Test-Path -LiteralPath $appExe) { Move-Item -LiteralPath $appExe -Destination $backupExe -Force }\n"
-            "  Move-Item -LiteralPath $newExe -Destination $appExe -Force\n"
-            "  Write-Host 'Start-Process 실행'\n"
-            "  Start-Process -FilePath $appExe\n"
+            "  Write-Host '업데이트된 파일 실행'\n"
+            "  Start-Process -FilePath $newExe\n"
             "  Write-Host 'Start-Process 완료'\n"
             "}\n"
             "catch {\n"
             "  Write-Host '업데이트 스크립트 오류:' $_\n"
             "  Write-Host '업데이트 실패:' $_\n"
-            "  if ((-not (Test-Path -LiteralPath $appExe)) -and (Test-Path -LiteralPath $backupExe)) {\n"
-            "    Move-Item -LiteralPath $backupExe -Destination $appExe -Force\n"
-            "  }\n"
             "}\n"
             "Write-Host '=== 업데이트 스크립트 종료 ==='\n"
         )
@@ -1954,8 +1942,9 @@ class App(ctk.CTk):
                     "-ExecutionPolicy", "Bypass",
                     "-File", script_path,
                 ],
-                creationflags=flags,
-                close_fds=True,
+                # creationflags=flags,
+                # close_fds=True,
+                shell=True             # 추가
             )
 
             self.save()
@@ -3009,7 +2998,8 @@ class App(ctk.CTk):
             personal_info.append((
                 self.player_enabled[i],
                 p.get("weapon", "없음"),
-                seal_re + seal_shin,
+                seal_re,
+                seal_shin,
             ))
             if self.player_enabled[i]:
                 total += dps_eok
@@ -3038,21 +3028,25 @@ class App(ctk.CTk):
             "다칸(후원)": "다칸(후)",
         }
         weapon_count = {}
-        seal_values = []
-        for enabled, weapon, seal in personal_info:
+        seal_re_list = []
+        seal_shin_list = []
+        for enabled, weapon, seal_re, seal_shin in personal_info:
             if not enabled:
                 continue
             shown_weapon = weapon_alias.get(str(weapon), str(weapon))
             weapon_count[shown_weapon] = weapon_count.get(shown_weapon, 0) + 1
-            seal_values.append(str(seal))
+            seal_re_list.append(str(seal_re))
+            seal_shin_list.append(str(seal_shin))
 
         if weapon_count:
             weapon_parts = [f"{name} {cnt}" for name, cnt in weapon_count.items()]
-            lines.append(f"무기 - {' '.join(weapon_parts)}")
-            lines.append(f"인장 - {' '.join(seal_values)}")
+            lines.append(f"[무기] - {' '.join(weapon_parts)}")
+            lines.append(f"[레]인 - {' '.join(seal_re_list)}")
+            lines.append(f"[신]인 - {' '.join(seal_shin_list)}")
         else:
-            lines.append("무기 - 없음")
-            lines.append("인장 - 없음")
+            lines.append("[무기] - 없음")
+            lines.append("[레]인 - 없음")
+            lines.append("[신]인 - 없음")
 
         if current_name is None:
             lines.append("[현재] 가능 보스: 없음")
