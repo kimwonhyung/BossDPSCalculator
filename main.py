@@ -71,7 +71,7 @@ APP_VERSION = "1.5"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
 UPDATE_DOWNLOAD_TIMEOUT_SEC = 25
-
+# 흐음
 
 def _resource_path(filename: str) -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -1635,7 +1635,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
         self._is_frozen_exe = bool(getattr(sys, "frozen", False))
 
-        self.title("🔥 5인 보스 DPS 계산기  |  시즌2")
+        self.title("🔥 6인 보스 DPS 계산기  |  시즌2")
         window_width = 720
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -1913,7 +1913,7 @@ class App(ctk.CTk):
             "}\n"
             "catch {\n"
             "  Write-Host '업데이트 스크립트 오류:' $_\n"
-            "  [System.Windows.Forms.MessageBox]::Show('업데이트 실패: ' + $_, '업데이트 오류', 'OK', 'Error')\n"
+            "  Write-Host '업데이트 실패:' $_\n"
             "  if ((-not (Test-Path -LiteralPath $appExe)) -and (Test-Path -LiteralPath $backupExe)) {\n"
             "    Move-Item -LiteralPath $backupExe -Destination $appExe -Force\n"
             "  }\n"
