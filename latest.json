@@ -1,6 +1,6 @@
 {
-  "version": "1.4",
-  "url": "https://github.com/kimwonhyung/BossDPSCalculator/releases/download/v1.4/BossDPSCalculator_v2_1.4.exe",
-  "sha256": "A9FBD8E7976C488C4A455859C14DD955492ADE29923C82124A9CC11383240591",
+  "version": "1.5",
+  "url": "https://github.com/kimwonhyung/BossDPSCalculator/releases/download/v1.5/BossDPSCalculator_v2_1.5.exe",
+  "sha256": "8942F7D67B7780F07BADBE01D348CEC2651CCCD05B3179232D032612988299C7",
   "notes": "자동 업데이트 기능 추가"
 }
