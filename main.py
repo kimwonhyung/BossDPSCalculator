@@ -67,8 +67,8 @@ BOSSES = [
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 
 APP_VERSION = "1.32.0"
-# 배포 시 실제 latest.json 주소로 바꿔주세요. 비어 있으면 자동 업데이트 체크를 하지 않습니다.
-UPDATE_MANIFEST_URL = ""
+# GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
+UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
 UPDATE_DOWNLOAD_TIMEOUT_SEC = 25
 
