@@ -1635,7 +1635,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
         self._is_frozen_exe = bool(getattr(sys, "frozen", False))
 
-        self.title("🔥 7인 보스 DPS 계산기  |  시즌2")
+        self.title("🔥 6인 보스 DPS 계산기  |  시즌2")
         window_width = 720
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
