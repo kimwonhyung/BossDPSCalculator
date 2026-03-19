@@ -66,7 +66,7 @@ BOSSES = [
 
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 # 업데이트 시 latest.json과 함께 버전, URL, SHA256 해시 갱신 필요  
-APP_VERSION = "1.6"
+APP_VERSION = "1.4"
 # GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
@@ -540,6 +540,16 @@ class OnboardWindow(ctk.CTkToplevel):
                     "3333-22-5948-231\n"
                     "예금주: 김원형\n\n"
                     "항상 사용해 주셔서 감사합니다."
+                ),
+            },
+            {
+                "icon": "👤",
+                "title": "버전 및 제작자",
+                "sub": "앱 정보",
+                "body": (
+                    f"현재 버전: v{APP_VERSION}\n"
+                    "제작자: WonHyungE\n"
+                    "문의: 디스코드 - haram5353"
                 ),
             },
         ]
@@ -1786,7 +1796,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
         self._is_frozen_exe = bool(getattr(sys, "frozen", False))
 
-        self.title("🔥 7인 보스 DPS 계산기  |  시즌2")
+        self.title("🔥 6인 보스 DPS 계산기  |  시즌2")
         window_width = 720
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
