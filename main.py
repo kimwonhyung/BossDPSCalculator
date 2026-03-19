@@ -66,7 +66,7 @@ BOSSES = [
 
 SAVE_FILE = Path(os.path.expanduser("~")) / ".dps_calc_save.json"
 # 업데이트 시 latest.json과 함께 버전, URL, SHA256 해시 갱신 필요  
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 # GitHub에서 자동 업데이트 확인 (배포된 exe에서만 작동)
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kimwonhyung/BossDPSCalculator/main/latest.json"
 UPDATE_CHECK_TIMEOUT_SEC = 4
@@ -1628,6 +1628,157 @@ class PlayerCard(ctk.CTkFrame):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  메인 앱
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _build_apply_ps_script(downloaded_exe: Path, new_version: str, notes: str = '', wait_pid: int = None) -> str:
+    def _ps_quote(text: str) -> str:
+        return str(text).replace("'", "''")
+
+    def _ps_literal(text: str) -> str:
+        return f"'{_ps_quote(text)}'"
+
+    pid_val = wait_pid if wait_pid is not None else os.getpid()
+    app_exe = Path(sys.executable).resolve()
+    notes_val = str(notes or "")
+
+    ps_script = (
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$pidToWait = {pid_val}\n"
+        f"$newExe = {_ps_literal(str(downloaded_exe))}\n"
+        f"$oldExe = {_ps_literal(str(app_exe))}\n"
+        f"$newVersion = '{_ps_quote(new_version)}'\n"
+        "Write-Host '=== 업데이트 스크립트 시작 ==='\n"
+        "Write-Host 'newExe:' $newExe\n"
+        "Write-Host 'oldExe:' $oldExe\n"
+        "Write-Host 'newVersion:' $newVersion\n"
+        "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }\n"
+        "Start-Sleep -Milliseconds 800\n"
+        "# 로그 파일 경로\n"
+        "$parent = Split-Path -Parent $oldExe\n"
+        "$log = Join-Path $parent 'apply_update_log.txt'\n"
+        "function _log([string]$m) { Add-Content -LiteralPath $log -Value ((Get-Date).ToString('s') + ' ' + $m) }\n"
+        "_log '업데이트 스크립트 시작'\n"
+        "try {\n"
+        "  Write-Host '백업 경로 계산'\n"
+        "  $parent = Split-Path -Parent $oldExe\n"
+        "  $base = Split-Path -Leaf $oldExe\n"
+        "  $baseName = [IO.Path]::GetFileNameWithoutExtension($base)\n"
+        "  # baseName에 이미 버전 표기(_v2_1.4 등)가 있으면 제거하여 기본 이름을 구한다.\n"
+        "  try { $baseRoot = $baseName -replace '_v2_[0-9_\\.]+$','' } catch { $baseRoot = $baseName }\n"
+        "  $ext = [IO.Path]::GetExtension($base)\n"
+        "  try { $oldVersion = (Get-Item $oldExe).VersionInfo.FileVersion } catch { $oldVersion = '' }\n"
+        "  if (-not $oldVersion) { $oldVersion = (Get-Date).ToString('yyyyMMddHHmmss') }\n"
+        "  # 백업 파일 생성하지 않음 - 기존 실행파일은 그대로 둡니다.\n"
+        "  _log '새 파일 복사 시작'\n"
+        "  # 새 파일을 버전명이 포함된 파일명으로 복사\n"
+        "  # newVersion이 major_minor 형식(예: 2_1.5)이면 그대로 사용, 그렇지 않으면 기존 파일명에서 major(vN)를 추출해 결합\n"
+        "  if ($newVersion -match '^[0-9]+_[0-9]') {\n"
+        "    $newName = ($baseRoot + '_v' + $newVersion + $ext)\n"
+        "  } else {\n"
+        "    $maj = ''\n"
+        "    try {\n"
+        "      $m = [regex]::Match($baseName, '_v([0-9]+)')\n"
+        "      if ($m.Success) { $maj = $m.Groups[1].Value }\n"
+        "    } catch {}\n"
+        "    if ($maj -ne '') {\n"
+        "      $newName = ($baseRoot + '_v' + $maj + '_' + $newVersion + $ext)\n"
+        "    } else {\n"
+        "      $newName = ($baseRoot + '_v' + $newVersion + $ext)\n"
+        "    }\n"
+        "  }\n"
+        "  $newPath = Join-Path $parent $newName\n"
+        "  if (Test-Path $newPath) { Remove-Item -LiteralPath $newPath -Force -ErrorAction SilentlyContinue }\n"
+        "  Copy-Item -LiteralPath $newExe -Destination $newPath -Force\n"
+        "  _log ('새 파일 위치: ' + $newPath)\n"
+        "\n"
+        "  # 바로가기(.lnk) 업데이트 시도\n"
+        "  try {\n"
+        "    $wsh = New-Object -ComObject WScript.Shell\n"
+        "    $searchRoots = @()\n"
+        "    try { $searchRoots += [Environment]::GetFolderPath('Desktop') } catch {}\n"
+        "    try { $searchRoots += Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs' } catch {}\n"
+        "    try { $searchRoots += Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs' } catch {}\n"
+        "    try { $searchRoots += Join-Path $env:PUBLIC 'Desktop' } catch {}\n"
+        "    $searchRoots = $searchRoots | Where-Object { Test-Path $_ } | Select-Object -Unique\n"
+        "    foreach ($root in $searchRoots) {\n"
+        "      Get-ChildItem -Path $root -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {\n"
+        "        try {\n"
+        "          $lnk = $_\n"
+        "          $s = $wsh.CreateShortcut($lnk.FullName)\n"
+        "          if ($s.TargetPath -eq $oldExe) {\n"
+        "            $s.TargetPath = $newPath\n"
+        "            $s.Save()\n"
+        "            _log ('바로가기 업데이트: ' + $lnk.FullName)\n"
+        "          }\n"
+        "        } catch {\n"
+        "          # 무시\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "  } catch {\n"
+        "    _log ('바로가기 갱신 중 오류: ' + $_)\n"
+        "  }\n"
+        "  _log '교체 완료'\n"
+        "  Write-Host '신버전 실행 안내'\n"
+        f"  $notes = {_ps_literal(notes_val)}\n"
+        "  try {\n"
+        "    if ($notes -eq '') { try { $notes = (Get-Content -LiteralPath $newExe -ErrorAction SilentlyContinue | Out-String) } catch { } }\n"
+        "  } catch { }\n"
+        "  $msg = @\"\n업데이트가 완료되었습니다.\r\n신버전을 실행해 주세요.\r\n\r\n신버전: $newVersion\r\n\r\n변경사항:\r\n$notes\r\n\"@\n"
+        "  try {\n"
+        "    Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Xaml\n"
+        "    $xaml = @\"\n"
+        "<Window xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Title=\"업데이트\" Height=\"300\" Width=\"300\" WindowStartupLocation=\"CenterScreen\">\n"
+        "  <Grid Margin=\"10\">\n"
+        "    <Grid.RowDefinitions>\n"
+        "      <RowDefinition Height=\"Auto\"/>\n"
+        "      <RowDefinition Height=\"*\"/>\n"
+        "      <RowDefinition Height=\"Auto\"/>\n"
+        "    </Grid.RowDefinitions>\n"
+        "    <TextBlock FontSize=\"14\">\n"
+        "      <Run Text=\"업데이트가 완료되었습니다.\" />\n"
+        "      <LineBreak />\n"
+        "      <Run Text=\"신버전을 실행해 주세요.\" />\n"
+        "    </TextBlock>\n"
+        "    <ScrollViewer Grid.Row=\"1\" VerticalScrollBarVisibility=\"Auto\">\n"
+        "      <TextBlock TextWrapping=\"Wrap\" Name=\"NotesText\" />\n"
+        "    </ScrollViewer>\n"
+        "    <StackPanel Grid.Row=\"2\" Orientation=\"Horizontal\" HorizontalAlignment=\"Right\" Margin=\"0,8,0,0\">\n"
+        "      <Button Name=\"CloseBtn\" Width=\"100\">닫기</Button>\n"
+        "    </StackPanel>\n"
+        "  </Grid>\n"
+        "</Window>\n"
+        "\"@\n"
+        "    $reader = (New-Object System.Xml.XmlNodeReader ([xml]$xaml))\n"
+        "    $window = [Windows.Markup.XamlReader]::Load($reader)\n"
+        "    try { $notesCtrl = $window.FindName('NotesText'); $notesCtrl.Text = \"`n$notes\" } catch { }\n"
+        "    $close = $window.FindName('CloseBtn')\n"
+        "    $close.Add_Click({ $window.Close() })\n"
+        "    $window.ShowDialog() | Out-Null\n"
+        "    # 사용자가 수동으로 신버전을 실행하도록 안내만 합니다.\n"
+        "    _log '완료 알림 표시 성공'\n"
+        "  } catch {\n"
+        "    _log ('완료 알림 표시 실패: ' + $_)\n"
+        "    try {\n"
+        "      $tf = Join-Path $parent 'update_notes.txt'\n"
+        "      Set-Content -LiteralPath $tf -Value $msg -Encoding UTF8\n"
+        "      Start-Process -FilePath 'notepad.exe' -ArgumentList $tf\n"
+        "      _log ('대체 표시: notepad로 열기 ' + $tf)\n"
+        "    } catch {\n"
+        "      _log ('대체 표시 실패: ' + $_)\n"
+        "    }\n"
+        "  }\n"
+        "  # 오래된 백업 정리 (30일 이상)\n"
+        "  $cutoff = (Get-Date).AddDays(-30)\n"
+        "  Get-ChildItem -Path $parent -Filter ($baseName + '_v*' + $ext) | Where-Object { $_.LastWriteTime -lt $cutoff } | Remove-Item -Force -ErrorAction SilentlyContinue\n"
+        "}\n"
+        "catch {\n"
+        "  _log ('업데이트 스크립트 오류: ' + $_)\n"
+        "  _log ('업데이트 실패: ' + $_)\n"
+        "}\n"
+        "Write-Host '=== 업데이트 스크립트 종료 ==='\n"
+    )
+
+    return ps_script
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -1635,7 +1786,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
         self._is_frozen_exe = bool(getattr(sys, "frozen", False))
 
-        self.title("🔥 6인 보스 DPS 계산기  |  시즌2")
+        self.title("🔥 7인 보스 DPS 계산기  |  시즌2")
         window_width = 720
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -1883,59 +2034,8 @@ class App(ctk.CTk):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _build_update_apply_script(self, downloaded_exe: Path, new_version: str) -> str:
-        app_exe = Path(sys.executable).resolve()
-
-        def _ps_quote(text: str) -> str:
-            return str(text).replace("'", "''")
-
-        def _ps_literal(text: str) -> str:
-            # PowerShell에서 -LiteralPath에 사용할 경로를 항상 '로 감싸기
-            return f"'{_ps_quote(text)}'"
-
-        pid_val = os.getpid()
-        ps_script = (
-            "$ErrorActionPreference = 'Stop'\n"
-            f"$pidToWait = {pid_val}\n"
-            f"$newExe = {_ps_literal(str(downloaded_exe))}\n"
-            f"$oldExe = {_ps_literal(str(app_exe))}\n"
-            f"$newVersion = '{_ps_quote(new_version)}'\n"
-            "Write-Host '=== 업데이트 스크립트 시작 ==='\n"
-            "Write-Host 'newExe:' $newExe\n"
-            "Write-Host 'oldExe:' $oldExe\n"
-            "Write-Host 'newVersion:' $newVersion\n"
-            "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }\n"
-            "Start-Sleep -Milliseconds 800\n"
-            "try {\n"
-            "  Write-Host '백업 경로 계산'\n"
-            "  $parent = Split-Path -Parent $oldExe\n"
-            "  $base = Split-Path -Leaf $oldExe\n"
-            "  $baseName = [IO.Path]::GetFileNameWithoutExtension($base)\n"
-            "  $ext = [IO.Path]::GetExtension($base)\n"
-            "  try { $oldVersion = (Get-Item $oldExe).VersionInfo.FileVersion } catch { $oldVersion = '' }\n"
-            "  if (-not $oldVersion) { $oldVersion = (Get-Date).ToString('yyyyMMddHHmmss') }\n"
-            "  $backupName = ($baseName + '_v' + $oldVersion + $ext)\n"
-            "  $backupPath = Join-Path $parent $backupName\n"
-            "  if (Test-Path $backupPath) { Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue }\n"
-            "  Write-Host '백업 생성:' $backupPath\n"
-            "  Move-Item -LiteralPath $oldExe -Destination $backupPath -Force\n"
-            "  Write-Host '백업 완료'\n"
-            "  Write-Host '새 파일 복사'\n"
-            "  Copy-Item -LiteralPath $newExe -Destination $oldExe -Force\n"
-            "  Write-Host '교체 완료'\n"
-            "  Write-Host '신버전 실행'\n"
-            "  Start-Process -FilePath $oldExe\n"
-            "  Write-Host '신버전 실행 완료'\n"
-            "  # 오래된 백업 정리 (30일 이상)\n"
-            "  $cutoff = (Get-Date).AddDays(-30)\n"
-            "  Get-ChildItem -Path $parent -Filter ($baseName + '_v*' + $ext) | Where-Object { $_.LastWriteTime -lt $cutoff } | Remove-Item -Force -ErrorAction SilentlyContinue\n"
-            "}\n"
-            "catch {\n"
-            "  Write-Host '업데이트 스크립트 오류:' $_\n"
-            "  Write-Host '업데이트 실패:' $_\n"
-            "}\n"
-            "Write-Host '=== 업데이트 스크립트 종료 ==='\n"
-        )
-        return ps_script
+        # 공용 빌더로 대체
+        return _build_apply_ps_script(downloaded_exe, new_version)
     def _on_update_download_done(self, outcome):
         self._update_downloading = False
         if not isinstance(outcome, dict):
@@ -3249,6 +3349,159 @@ class App(ctk.CTk):
         self.destroy()
 
 
+def _check_and_apply_update_before_launch() -> bool:
+    """실행 전에 업데이트가 있으면 다운로드하여 적용하고 True를 반환한다.
+    실패하거나 업데이트가 없으면 False 반환.
+    """
+    
+    
+    try:
+        # 자동 업데이트는 배포된 exe에서만 동작
+        if not bool(getattr(sys, "frozen", False)):
+            return False
+
+        manifest_url = str(UPDATE_MANIFEST_URL or "").strip()
+        if not manifest_url:
+            return False
+
+        req = urlrequest.Request(manifest_url, headers={"Cache-Control": "no-cache"})
+        with urlrequest.urlopen(req, timeout=UPDATE_CHECK_TIMEOUT_SEC) as resp:
+            payload = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(payload)
+
+        remote_ver = str(data.get("version") or "").strip()
+        download_url = str(data.get("url") or "").strip()
+        sha256 = str(data.get("sha256") or "").strip().lower()
+
+        if not (remote_ver and download_url):
+            return False
+
+        if not _is_remote_version_newer(remote_ver, APP_VERSION):
+            return False
+
+        # 사용자에게 업데이트 여부를 묻습니다 — Tkinter를 생성하지 않고 WinAPI MessageBox 사용
+        try:
+            notes = str(data.get("notes") or "").strip()
+            short = (notes[:200] + '...') if notes and len(notes) > 200 else notes
+            msg = f"새 버전이 있습니다.\n\n현재: v{APP_VERSION}\n최신: v{remote_ver}\n"
+            if short:
+                msg += f"\n변경사항:\n{short}\n"
+            msg += "\n지금 업데이트할까요?"
+            if os.name == 'nt':
+                try:
+                    # PowerShell WPF 창을 동기적으로 띄워 사용자 입력을 받습니다.
+                    ps_template = r'''Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Xaml
+                    [xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="업데이트" Height="300" Width="300" WindowStartupLocation="CenterScreen">
+<Grid Margin="10">
+<Grid.RowDefinitions>
+    <RowDefinition Height="*"/>
+    <RowDefinition Height="Auto"/>
+</Grid.RowDefinitions>
+<ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+    <TextBlock TextWrapping="Wrap" Name="MsgText" />
+</ScrollViewer>
+<StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+    <Button Name="YesBtn" Width="100" Margin="0,0,8,0">업데이트</Button>
+    <Button Name="NoBtn" Width="100">취소</Button>
+</StackPanel>
+</Grid>
+</Window>
+"@
+$reader = (New-Object System.Xml.XmlNodeReader ([xml]$xaml))
+$window = [Windows.Markup.XamlReader]::Load($reader)
+$txt = $window.FindName("MsgText")
+$txt.Text = @'
+__MSG_PLACEHOLDER__
+'@
+$yes = $window.FindName("YesBtn")
+$no = $window.FindName("NoBtn")
+$yes.Add_Click({ $window.Tag = 1; $window.Close() })
+$no.Add_Click({ $window.Tag = 0; $window.Close() })
+$window.ShowDialog() | Out-Null
+if ($window.Tag -eq 1) { exit 1 } else { exit 0 }'''
+
+                    import tempfile
+                    tf = tempfile.NamedTemporaryFile(delete=False, suffix='.ps1', mode='w', encoding='utf-8-sig')
+                    try:
+                        tf.write(ps_template.replace('__MSG_PLACEHOLDER__', msg))
+                        tf.close()
+                        proc = subprocess.run([
+                            'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tf.name
+                        ], check=False)
+                        if proc.returncode != 1:
+                            try:
+                                os.remove(tf.name)
+                            except Exception:
+                                pass
+                            return False
+                    finally:
+                        try:
+                            if os.path.exists(tf.name):
+                                os.remove(tf.name)
+                        except Exception:
+                            pass
+                except Exception:
+                    # 실패하면 업데이트 진행하지 않음
+                    return False
+            else:
+                # 비Windows 환경에서는 자동으로 진행하지 않음
+                return False
+
+        except Exception:
+            return False
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="bossdps_update_"))
+        downloaded_exe = tmp_dir / f"update_new_{remote_ver}.exe"
+
+        req = urlrequest.Request(download_url, headers={"Cache-Control": "no-cache"})
+        with urlrequest.urlopen(req, timeout=UPDATE_DOWNLOAD_TIMEOUT_SEC) as resp:
+            with downloaded_exe.open("wb") as f:
+                while True:
+                    chunk = resp.read(1024 * 128)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+
+        if sha256:
+            actual = _sha256_file(downloaded_exe)
+            if actual.lower() != sha256.lower():
+                return False
+
+        # PowerShell 스크립트는 공용 빌더를 사용합니다.
+        ps_script = _build_apply_ps_script(downloaded_exe, remote_ver, notes=notes, wait_pid=os.getpid())
+
+        script_path = tmp_dir / "apply_update_headless.ps1"
+        script_path.write_text(ps_script, encoding="utf-8-sig")
+
+        # PowerShell로 스크립트 실행 (비동기)
+        try:
+            flags = 0
+            if hasattr(subprocess, "CREATE_NEW_CONSOLE"):
+                flags |= subprocess.CREATE_NEW_CONSOLE
+            elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+                flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+
+            subprocess.Popen([
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", str(script_path),
+            ], creationflags=flags, close_fds=True, shell=False)
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
+    try:
+        applied = _check_and_apply_update_before_launch()
+        if applied:
+            # 업데이트를 적용하도록 스크립트가 실행되었으면 현재 프로세스 종료
+            sys.exit(0)
+    except Exception:
+        pass
     App().mainloop()
 

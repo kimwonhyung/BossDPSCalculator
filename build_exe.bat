@@ -7,7 +7,7 @@ echo  Boss DPS Calculator EXE Build
 echo ====================================
 echo.
 
-set "APP_NAME=BossDPSCalculator_v2_1.5"
+set "APP_NAME=BossDPSCalculator_v2_1.6"
 
 set "PY_CMD="
 if exist "%LocalAppData%\Programs\Python\Python313-32\python.exe" (
